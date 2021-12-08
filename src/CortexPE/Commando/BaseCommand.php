@@ -209,6 +209,60 @@ abstract class BaseCommand extends Command implements IArgumentable, IRunnable, 
 		}
 	}
 
+    public function registerSubCommandsFromDirectory(string $path) {
+        $path .= "/";
+        if (!is_dir($path)) return; # Exit if the "directory" isn't actually a directory.
+        $files = scandir($path); # Get an array of files.
+        foreach ($files as $fileName) { # Foreach the file names.
+            $file = $path . $fileName; # Get the path of each file.
+            if (is_dir($file)) { # Break and re-call for that directory.
+                $this->registerSubCommandsFromDirectory($file);
+                continue;
+            }
+
+            $namespace = $this->extract_namespace($file) . "\\" . basename($fileName, ".php"); # Get the namespace of the file by reading it.
+            if(!class_exists($namespace, true)) { # Check if a class exists.
+                var_dump("File from path: {$file} (namespace: {$namespace}) does not contain a class."); # Throw a message if it doesn't.
+                continue;
+            }
+
+            if(!is_a($namespace, BaseSubCommand::class, true)) { # Compare the class to the class the user provides.
+                var_dump("File from path: {$file} (namespace: {$namespace}) is not an instance of BaseModule."); # Throw a message if the classes don't match.
+                continue;
+            }
+
+
+            $class = new $namespace(); # Create a new class instance.
+            $keys = $class->getAliases();
+            array_unshift($keys, $class->getName());
+            $keys = array_unique($keys);
+            foreach($keys as $key) {
+                if(!isset($this->subCommands[$key])) {
+                    $class->setParent($this);
+                    $this->subCommands[$key] = $class;
+                } else {
+                    throw new InvalidArgumentException("SubCommand with same name / alias for '{$key}' already exists");
+                }
+            }
+        }
+    }
+
+    private function extract_namespace($file): string {
+        $ns = null;
+        $handle = fopen($file, "r");
+        if ($handle) {
+            while (($line = fgets($handle)) !== false) {
+                if (strpos($line, 'namespace') === 0) {
+                    $parts = explode(' ', $line);
+                    $ns = rtrim(trim($parts[1]), ';');
+                    break;
+                }
+            }
+            fclose($handle);
+        }
+        return $ns;
+    }
+
 	/**
 	 * @return BaseSubCommand[]
 	 */
